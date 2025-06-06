@@ -3,6 +3,12 @@ const express = require('express');
 const line = require('@line/bot-sdk');
 const webhookHandler = require('./webhook');
 const app = express();
+const cors = require('cors');
+
+app.use(cors({
+  origin: 'https://jeante2549.github.io'
+}));
+app.use(express.json());
 
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
