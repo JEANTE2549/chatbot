@@ -35,7 +35,7 @@ const richMenus = {
       },
       {
         bounds: { x: 1876, y: 0, width: 625, height: 759 },
-        action: { type: "postback", data: "action=contract_detail" }
+        action: { type: "postback", data: "action=contact_detail" }
       },
       {
         bounds: { x: 1876, y: 760, width: 309, height: 84 },
