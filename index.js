@@ -12,7 +12,7 @@ const config = {
 };
 
 app.use('/api', cors({
-  origin: 'https://jeante2549.github.io'
+  origin: '*'
 }));
 app.use('/api', express.json());
 app.post('/webhook', line.middleware(config), webhookHandler(config));
@@ -22,15 +22,30 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+const client = new line.Client(config);
 app.post("/api/sendPropertyDetail", async (req, res) => {
+  console.log("🔵 Received request for /api/sendPropertyDetail");
+
+  console.log("🔵 Environment SUPABASE_URL:", process.env.SUPABASE_URL);
+  console.log("🔵 Environment SUPABASE_KEY:", process.env.SUPABASE_KEY ? "exists" : "missing");
+
   const { lineUserId, propertyId } = req.body;
+  console.log("🔵 Incoming body:", req.body);
+
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+    console.error("❌ Missing SUPABASE env");
+    return res.status(500).json({ error: "Supabase not configured" });
+  }
 
   const { data, error } = await supabase
     .from("house_projects")
     .select("*")
     .eq("name", propertyId)
     .single();
-
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+  console.error("❌ Missing SUPABASE env");
+  return res.status(500).json({ error: "Supabase not configured" });
+}
   if (error || !data) {
     return res.status(404).json({ error: "Property not found" });
   }
@@ -60,6 +75,7 @@ app.post("/api/sendPropertyDetail", async (req, res) => {
     }
   };
 
+  
   await client.pushMessage(lineUserId, flexMessage);
   res.json({ success: true });
 });
