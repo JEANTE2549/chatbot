@@ -11,7 +11,7 @@ const richMenus = {
     size: { width: 2500, height: 843 },
     selected: true,
     name: "Main Menu",
-    chatBarText: "First",
+    chatBarText: "main menu",
     areas: [
       {
         bounds: { x: 0, y: 0, width: 1250, height: 421 },
@@ -48,6 +48,7 @@ const richMenus = {
 
     ]
   },
+  
 };
 
 const uploadMenus = async () => {
