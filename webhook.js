@@ -57,11 +57,11 @@ module.exports = (config) => {
       try {
         await Promise.all(req.body.events.map(async (event) => {
           const userId = event.source.userId;
+          const userName = event.source.userName || 'ผู้ใช้';
 
           if (event.type === 'postback') {
             const data = new URLSearchParams(event.postback.data);
             const action = data.get('action');
-            console.log('Raw postback data:', event.postback?.data);
 
             if (action === 'switch_tab') {
               const menu = data.get('menu');
@@ -323,7 +323,6 @@ module.exports = (config) => {
           if (action === 'more_detail') {
             const data = new URLSearchParams(event.postback?.data || '');
             const name = data.get('name');
-            console.log(`Fetching details for property ID: ${name}`);
             const { data: property, error } = await supabase
               .from('house_projects')
               .select('*')
@@ -336,7 +335,6 @@ module.exports = (config) => {
                 text: 'ขออภัย ไม่พบข้อมูลทรัพย์นี้ค่ะ'
               });
             }
-            console.log(`${property}`);
             const flexMsg = {
               type: 'flex',
               altText: `รายละเอียดทรัพย์: ${property.name}`,
@@ -412,23 +410,31 @@ module.exports = (config) => {
                     { type: 'text', text: property.map_link|| '-', size: 'xs', color: '#1E90FF', wrap: true },
                     { type: 'separator' },
                     { type: 'text', text: 'รายละเอียดเพิ่มเติม:', weight: 'bold', size: 'sm' },
-                    { type: 'text', text: (property.extra_detail || []).join('\n'), size: 'xs', wrap: true },
-                    { type: 'text', text: `สิ่งอำนวยความสะดวก: ${(property.facilities || []).join(', ')}`, size: 'xs', wrap: true },
+                    { type: 'text', text: `${(property.extra_detail || ['-']).join('\n')}`, size: 'xs', wrap: true },
+                    { type: 'text', text: `สิ่งอำนวยความสะดวก: ${(Array.isArray(property.facilities) ? property.facilities : []).join(', ')}`, size: 'xs', wrap: true },
                     { type: 'separator' },
                     { type: 'text', text: 'รายการของแถมและโปรโมชั่น:', weight: 'bold', size: 'sm' },
-                    { type: 'text', text: `โปรโมชั่น: ${property.promotion || '-'}`, size: 'sm', wrap: true },
-                    { type: 'text', text: `ของแถม: ${(property.free_gift || []).join('\n')}`, size: 'xs', wrap: true }
+                    { type: 'text', text: `โปรโมชั่นของเดือนนี้: ${property.promotion || '-'}`, size: 'sm', wrap: true },
+                    { type: 'text', text: `ของแถม: \n${(property.free_gift || []).join('\n')}`, size: 'xs', wrap: true }
                   ]
                 }
               }
             };
-
             return client.replyMessage(event.replyToken, flexMsg);
           }
           }
           
           if (event.type === 'follow') {
-            await client.replyMessage(event.replyToken, welcomeFlexMessage);
+            const profile = await client.getProfile(userId);
+            const userName = profile.displayName || 'ผู้ใช้';
+            const replyMessage = [welcomeFlexMessage,ConsignmentFlexMessage];
+            await client.replyMessage(event.replyToken, replyMessage);
+            const { data, error } = await supabase
+              .from('users')
+              .upsert(
+                { line_user_id: userId, line_user_name: userName },
+                { onConflict: ['line_user_id'] }
+              );
           }
 
           if (event.type === 'message' && event.message.type === 'text') {
@@ -439,7 +445,6 @@ module.exports = (config) => {
             if (text.startsWith('แชร์ทรัพย์: ')) {
               const propertyId = text.replace('แชร์ทรัพย์: ', '').trim();
               const LIFFlink = `https://liff.line.me/2007520214-YpaPvNR1/?propertyId=${encodeURIComponent(propertyId)}`
-              console.log(`Sharing property with ID: ${propertyId} and the link ${LIFFlink}`);
               await client.replyMessage(event.replyToken, {
                 type: 'text',
                 text: `แชร์อสังหาแห่งนี้ที่คุณสนใจให้คนที่คุณรักใน line ผ่านปุ่มด้านล่างนี้ค่ะ👇`,
@@ -586,7 +591,6 @@ module.exports = (config) => {
               const date = dateMatch[1];
               const time = timeMatch[1];
               const reservationTimestampz = (`${date} ${time}:00`);
-              console.log(`User ${userId} requested reservation on ${reservationTimestampz}`);
 
               const { data, error } = await supabase
                 .from('users')
@@ -637,6 +641,53 @@ module.exports = (config) => {
                   text: 'การจองของคุณถูกยกเลิกแล้วค่ะ หากต้องการนัดใหม่ กรรุณากดที่เมนู "นัดดูอสังหาริมทรัพย์" ใหม่อีกรอบค่ะ 😊',
                 });
               }
+
+            if (text.startsWith('📋 สรุปแบบฟอร์ม')) {
+              const parseFormMessage = (text) => {
+                const result = {};
+                const phoneRegex = /(\d{9,11}|\d{2,4}-\d{3}-\d{3,4}|\d{2,4} \d{6,8}|\d{3} \d{3} \d{4})/;
+                const lines = text.trim().split('\n');
+                for (const line of lines) {
+                  if (!line.includes(':')) continue;
+                  const [rawKey, ...valueParts] = line.split(':');
+                  const key = rawKey.trim().replace('📋 สรุปแบบฟอร์ม', '');
+                  const value = valueParts.join(':').trim();
+                  if (key && value) result[key] = value;
+                }
+                const phoneMatch = text.match(phoneRegex);
+                if (phoneMatch) {
+                  const rawPhone = phoneMatch[1];
+                  result['เบอร์โทร'] = rawPhone.replace(/[-\s]/g, '');
+                }
+                return result;
+              };
+              const parsed = parseFormMessage(text);
+              const intentValue = parsed['ซื้อหรือเช่า']?.includes('ซื้อ') ? true : false;
+              const payload = {
+                line_user_id: userId,
+                role: parsed['role'] || null,
+                name: [parsed['ชื่อ'], parsed['นามสกุล']].filter(Boolean).join(' ').trim() || null,
+                phone: parsed['เบอร์โทร'] || null,
+                intent: intentValue,
+                area_interest: [parsed['จังหวัด'], parsed['อำเภอ']].filter(Boolean).join(' ').trim() || null
+              };
+              const { data, error } = await supabase
+                .from('users')
+                .upsert(payload, { onConflict: ['line_user_id'] });
+
+              if (error) {
+                console.error('Supabase error:', error);
+                return client.replyMessage(event.replyToken, {
+                  type: 'text',
+                  text: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล 😢 \nโปรดรอ admin มาตอบค่ะ'
+                });
+              }
+              return client.replyMessage(event.replyToken, {
+                type: 'text',
+                text: `✅ ระบบได้รับข้อมูลแล้วค่ะ\nคุณ ${payload.name}\nเราจะติดต่อกลับทางเบอร์ ${payload.phone}`
+              });
+            }
+
           }
         }));
         res.status(200).end();
@@ -701,7 +752,7 @@ const welcomeFlexMessage = {
           action: {
             type: 'uri',
             label: 'ดูวิธีใช้เมนู',
-            uri: 'https://res.cloudinary.com/dxbzwwab6/raw/upload/v1748877284/uploads/file'
+            uri: 'https://liff.line.me/2007520214-Q2NWqw94'
           }
         }
       ]
